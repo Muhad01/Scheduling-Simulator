@@ -25,6 +25,14 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Clock, Activity, Cpu, Lightbulb, BarChart2, Layers } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
+const createInitialSchedulerState = (): SchedulerState => ({
+  readyQueue: [],
+  runningProcess: null,
+  completedProcesses: [],
+  currentTime: 0,
+  timeQuantumRemaining: 0,
+})
+
 export function Scheduler() {
   // Simulation state
   const [processes, setProcesses] = useState<Process[]>([])
@@ -36,13 +44,7 @@ export function Scheduler() {
   const [preemptive, setPreemptive] = useState(false) // For SJF and Priority
   const [ganttData, setGanttData] = useState<{ id: number; start: number; end: number; color: string }[]>([])
   const [metrics, setMetrics] = useState<any>(null)
-  const [schedulerState, setSchedulerState] = useState<SchedulerState>({
-    readyQueue: [],
-    runningProcess: null,
-    completedProcesses: [],
-    currentTime: 0,
-    timeQuantumRemaining: 0,
-  })
+  const [schedulerState, setSchedulerState] = useState<SchedulerState>(createInitialSchedulerState())
   const [algorithmHistory, setAlgorithmHistory] = useState<{ time: number; algorithm: SchedulingAlgorithm }[]>([])
   const [adaptiveSuggestion, setAdaptiveSuggestion] = useState<string | null>(null)
   const [adaptiveFeedbackVisible, setAdaptiveFeedbackVisible] = useState(true)
@@ -51,6 +53,49 @@ export function Scheduler() {
   const animationRef = useRef<number | null>(null)
   const lastUpdateTimeRef = useRef<number>(Date.now())
   const lastMetricsUpdateRef = useRef<number>(0)
+  const processesRef = useRef<Process[]>([])
+  const schedulerStateRef = useRef<SchedulerState>(createInitialSchedulerState())
+  const currentTimeRef = useRef(0)
+  const algorithmRef = useRef<SchedulingAlgorithm>(selectedAlgorithm)
+  const timeQuantumRef = useRef(timeQuantum)
+  const preemptiveRef = useRef(preemptive)
+
+  const setProcessesWithRef = (updater: Process[] | ((prev: Process[]) => Process[])) => {
+    if (typeof updater === "function") {
+      setProcesses((prev) => {
+        const next = (updater as (prev: Process[]) => Process[])(prev)
+        processesRef.current = next
+        return next
+      })
+    } else {
+      processesRef.current = updater
+      setProcesses(updater)
+    }
+  }
+
+  useEffect(() => {
+    processesRef.current = processes
+  }, [processes])
+
+  useEffect(() => {
+    schedulerStateRef.current = schedulerState
+  }, [schedulerState])
+
+  useEffect(() => {
+    currentTimeRef.current = currentTime
+  }, [currentTime])
+
+  useEffect(() => {
+    algorithmRef.current = selectedAlgorithm
+  }, [selectedAlgorithm])
+
+  useEffect(() => {
+    timeQuantumRef.current = timeQuantum
+  }, [timeQuantum])
+
+  useEffect(() => {
+    preemptiveRef.current = preemptive
+  }, [preemptive])
 
   // Add sample processes on initial load
   useEffect(() => {
@@ -112,45 +157,58 @@ export function Scheduler() {
         color: "#10b981", // emerald-500
       },
     ]
-    setProcesses(sampleProcesses)
+    setProcessesWithRef(sampleProcesses)
   }, [])
 
   // Main simulation loop
   useEffect(() => {
-    if (!isRunning) return
+    if (!isRunning) {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+        animationRef.current = null
+      }
+      return
+    }
+
+    lastUpdateTimeRef.current = performance.now()
 
     const runSimulation = (timestamp: number) => {
-      const deltaTime = ((timestamp - lastUpdateTimeRef.current) / 1000) * speed
+      const deltaTimeRaw = ((timestamp - lastUpdateTimeRef.current) / 1000) * speed
+      const deltaTime = Math.max(deltaTimeRaw, 0)
       lastUpdateTimeRef.current = timestamp
 
       // Update simulation time
-      const newTime = currentTime + deltaTime
+      const newTime = currentTimeRef.current + deltaTime
+      currentTimeRef.current = newTime
       setCurrentTime(newTime)
 
       // Update process states based on current time
       updateProcessStates(newTime)
 
       // Run the selected scheduling algorithm
+      const latestState: SchedulerState = { ...schedulerStateRef.current, currentTime: newTime }
       const newSchedulerState = runSchedulingAlgorithm(
-        selectedAlgorithm,
-        { ...schedulerState, currentTime: newTime },
-        processes,
-        timeQuantum,
-        preemptive,
+        algorithmRef.current,
+        latestState,
+        processesRef.current,
+        timeQuantumRef.current,
+        preemptiveRef.current,
+        deltaTime,
       )
+      schedulerStateRef.current = newSchedulerState
       setSchedulerState(newSchedulerState)
 
       // Update Gantt chart
-      updateGanttChart(newSchedulerState)
+      updateGanttChart(newSchedulerState, deltaTime)
 
       // Update MLFQ details if using MLFQ algorithm
-      if (selectedAlgorithm === "MLFQ") {
-        setMlfqDetails(getMLFQDetails(processes))
+      if (algorithmRef.current === "MLFQ") {
+        setMlfqDetails(getMLFQDetails(processesRef.current))
       }
 
       // Calculate metrics periodically during simulation (every 1 second of simulation time)
       if (newTime - lastMetricsUpdateRef.current >= 1) {
-        const currentMetrics = calculateMetrics(processes, newSchedulerState.completedProcesses)
+        const currentMetrics = calculateMetrics(processesRef.current, newSchedulerState.completedProcesses)
         setMetrics(currentMetrics)
         lastMetricsUpdateRef.current = newTime
 
@@ -162,16 +220,19 @@ export function Scheduler() {
       }
 
       // Check if simulation is complete
-      if (newSchedulerState.completedProcesses.length === processes.length && processes.length > 0) {
-        const finalMetrics = calculateMetrics(processes, newSchedulerState.completedProcesses)
+      if (
+        newSchedulerState.completedProcesses.length === processesRef.current.length &&
+        processesRef.current.length > 0
+      ) {
+        const finalMetrics = calculateMetrics(processesRef.current, newSchedulerState.completedProcesses)
         setMetrics(finalMetrics)
         setIsRunning(false)
 
         // Provide final adaptive feedback
         provideAdaptiveFeedback(finalMetrics, newTime, true)
+      } else {
+        animationRef.current = requestAnimationFrame(runSimulation)
       }
-
-      animationRef.current = requestAnimationFrame(runSimulation)
     }
 
     animationRef.current = requestAnimationFrame(runSimulation)
@@ -179,21 +240,21 @@ export function Scheduler() {
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current)
+        animationRef.current = null
       }
     }
-  }, [isRunning, processes, currentTime, selectedAlgorithm, timeQuantum, preemptive, speed, schedulerState])
+  }, [isRunning, speed])
 
   // Update process states based on current time
   const updateProcessStates = (time: number) => {
-    setProcesses((prevProcesses) => {
-      return prevProcesses.map((process) => {
-        // Check if process has arrived
+    setProcessesWithRef((prevProcesses) =>
+      prevProcesses.map((process) => {
         if (process.state === ProcessState.NotArrived && time >= process.arrivalTime) {
           return { ...process, state: ProcessState.Ready }
         }
         return process
-      })
-    })
+      }),
+    )
   }
 
   // Run the selected scheduling algorithm
@@ -203,52 +264,56 @@ export function Scheduler() {
     processes: Process[],
     timeQuantum: number,
     preemptive: boolean,
+    deltaTime: number,
   ): SchedulerState => {
     switch (algorithm) {
       case "FCFS":
-        return runFCFS(state, processes)
+        return runFCFS(state, processes, deltaTime)
       case "SJF":
-        return runSJF(state, processes, preemptive)
+        return runSJF(state, processes, preemptive, deltaTime)
       case "Priority":
-        return runPriority(state, processes, preemptive)
+        return runPriority(state, processes, preemptive, deltaTime)
       case "RoundRobin":
-        return runRoundRobin(state, processes, timeQuantum)
+        return runRoundRobin(state, processes, timeQuantum, deltaTime)
       case "MLFQ":
-        return runMLFQ(state, processes)
+        return runMLFQ(state, processes, deltaTime)
       default:
         return state
     }
   }
 
   // Update Gantt chart data
-  const updateGanttChart = (state: SchedulerState) => {
-    if (state.runningProcess) {
-      // Check if this process is already in the gantt data
-      const lastGanttItem = ganttData[ganttData.length - 1]
+  const updateGanttChart = (state: SchedulerState, deltaTime: number) => {
+    if (!state.runningProcess) return
 
-      if (lastGanttItem && lastGanttItem.id === state.runningProcess.id) {
-        // Update the end time of the existing process
-        setGanttData((prev) => {
-          const newData = [...prev]
-          newData[newData.length - 1] = {
-            ...newData[newData.length - 1],
-            end: isNaN(state.currentTime) ? 0 : state.currentTime,
-          }
-          return newData
-        })
-      } else {
-        // Add a new process to the gantt chart
-        setGanttData((prev) => [
-          ...prev,
+    const safeCurrentTime = Number.isFinite(state.currentTime) ? state.currentTime : 0
+    const segmentStart = Number.isFinite(state.currentTime - deltaTime)
+      ? Math.max(0, state.currentTime - deltaTime)
+      : safeCurrentTime
+
+    setGanttData((prev) => {
+      const lastItem = prev[prev.length - 1]
+
+      if (lastItem && lastItem.id === state.runningProcess!.id) {
+        return [
+          ...prev.slice(0, -1),
           {
-            id: state.runningProcess!.id,
-            start: isNaN(state.currentTime) ? 0 : state.currentTime,
-            end: isNaN(state.currentTime) ? 0 : state.currentTime,
-            color: state.runningProcess!.color,
+            ...lastItem,
+            end: safeCurrentTime,
           },
-        ])
+        ]
       }
-    }
+
+      return [
+        ...prev,
+        {
+          id: state.runningProcess!.id,
+          start: segmentStart,
+          end: safeCurrentTime,
+          color: state.runningProcess!.color,
+        },
+      ]
+    })
   }
 
   // Provide adaptive feedback based on metrics
@@ -324,25 +389,28 @@ export function Scheduler() {
 
   // Add a new process
   const addProcess = (process: Process) => {
-    const newProcess = {
-      ...process,
-      id: processes.length > 0 ? Math.max(...processes.map((p) => p.id)) + 1 : 1,
-      state: process.arrivalTime <= currentTime ? ProcessState.Ready : ProcessState.NotArrived,
-      remainingTime: process.burstTime,
-      waitingTime: 0,
-      turnaroundTime: 0,
-      responseTime: -1,
-      completionTime: -1,
-      color: getRandomColor(),
-    }
+    setProcessesWithRef((prev) => {
+      const nextId = prev.length > 0 ? Math.max(...prev.map((p) => p.id)) + 1 : 1
+      const newProcess = {
+        ...process,
+        id: nextId,
+        state: process.arrivalTime <= currentTimeRef.current ? ProcessState.Ready : ProcessState.NotArrived,
+        remainingTime: process.burstTime,
+        waitingTime: 0,
+        turnaroundTime: 0,
+        responseTime: -1,
+        completionTime: -1,
+        color: getRandomColor(),
+      }
 
-    setProcesses([...processes, newProcess])
+      return [...prev, newProcess]
+    })
   }
 
   // Update an existing process
   const updateProcess = (updatedProcess: Process) => {
-    setProcesses(
-      processes.map((p) =>
+    setProcessesWithRef((prev) =>
+      prev.map((p) =>
         p.id === updatedProcess.id ? { ...updatedProcess, remainingTime: updatedProcess.burstTime } : p,
       ),
     )
@@ -350,25 +418,24 @@ export function Scheduler() {
 
   // Remove a process
   const removeProcess = (id: number) => {
-    setProcesses(processes.filter((p) => p.id !== id))
+    setProcessesWithRef((prev) => prev.filter((p) => p.id !== id))
   }
 
   // Change the scheduling algorithm
   const changeAlgorithm = (algorithm: SchedulingAlgorithm) => {
     setSelectedAlgorithm(algorithm)
-    setAlgorithmHistory([...algorithmHistory, { time: currentTime, algorithm }])
+    setAlgorithmHistory((prev) => [...prev, { time: currentTimeRef.current, algorithm }])
 
     // Reset queue levels when switching to MLFQ
     if (algorithm === "MLFQ") {
-      setProcesses(
-        processes.map((p) => ({
+      setProcessesWithRef((prev) =>
+        prev.map((p) => ({
           ...p,
           queueLevel: p.state !== ProcessState.Completed ? 1 : p.queueLevel,
         })),
       )
 
-      // Initialize MLFQ details
-      setMlfqDetails(getMLFQDetails(processes))
+      setMlfqDetails(getMLFQDetails(processesRef.current))
     } else {
       setMlfqDetails(null)
     }
@@ -381,24 +448,22 @@ export function Scheduler() {
   const resetSimulation = () => {
     setIsRunning(false)
     setCurrentTime(0)
+    currentTimeRef.current = 0
     setGanttData([])
     setMetrics(null)
-    setSchedulerState({
-      readyQueue: [],
-      runningProcess: null,
-      completedProcesses: [],
-      currentTime: 0,
-      timeQuantumRemaining: 0,
-    })
+    const initialState = createInitialSchedulerState()
+    setSchedulerState(initialState)
+    schedulerStateRef.current = initialState
     setAlgorithmHistory([])
     setAdaptiveSuggestion(null)
     setAdaptiveFeedbackVisible(false)
     setMlfqDetails(null)
     lastMetricsUpdateRef.current = 0
+    lastUpdateTimeRef.current = performance.now()
 
     // Reset process states
-    setProcesses(
-      processes.map((process) => ({
+    setProcessesWithRef((prev) =>
+      prev.map((process) => ({
         ...process,
         state: process.arrivalTime <= 0 ? ProcessState.Ready : ProcessState.NotArrived,
         remainingTime: process.burstTime,

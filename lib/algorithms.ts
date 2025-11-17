@@ -1,8 +1,9 @@
 import { type Process, ProcessState, type SchedulerState, type MLFQDetails } from "@/lib/types"
 
 // First-Come, First-Served (FCFS) Algorithm
-export function runFCFS(state: SchedulerState, processes: Process[]): SchedulerState {
+export function runFCFS(state: SchedulerState, processes: Process[], deltaTime: number): SchedulerState {
   const newState = { ...state }
+  const timeStep = Math.max(deltaTime, 0)
 
   // Update ready queue with newly arrived processes
   const readyProcesses = processes.filter(
@@ -36,8 +37,7 @@ export function runFCFS(state: SchedulerState, processes: Process[]): SchedulerS
 
   // If a process is running, update its remaining time
   if (newState.runningProcess) {
-    const deltaTime = 0.1 // Small time step for simulation
-    newState.runningProcess.remainingTime -= deltaTime
+    newState.runningProcess.remainingTime -= timeStep
 
     // Update the process in the processes array
     const processIndex = processes.findIndex((p) => p.id === newState.runningProcess!.id)
@@ -66,7 +66,7 @@ export function runFCFS(state: SchedulerState, processes: Process[]): SchedulerS
   newState.readyQueue.forEach((process) => {
     const processIndex = processes.findIndex((p) => p.id === process.id)
     if (processIndex !== -1) {
-      processes[processIndex].waitingTime += 0.1 // Small time step
+      processes[processIndex].waitingTime += timeStep // Small time step
     }
   })
 
@@ -74,8 +74,14 @@ export function runFCFS(state: SchedulerState, processes: Process[]): SchedulerS
 }
 
 // Shortest Job First (SJF) Algorithm
-export function runSJF(state: SchedulerState, processes: Process[], preemptive: boolean): SchedulerState {
+export function runSJF(
+  state: SchedulerState,
+  processes: Process[],
+  preemptive: boolean,
+  deltaTime: number,
+): SchedulerState {
   const newState = { ...state }
+  const timeStep = Math.max(deltaTime, 0)
 
   // Update ready queue with newly arrived processes
   const readyProcesses = processes.filter(
@@ -140,8 +146,7 @@ export function runSJF(state: SchedulerState, processes: Process[], preemptive: 
 
   // If a process is running, update its remaining time
   if (newState.runningProcess) {
-    const deltaTime = 0.1 // Small time step for simulation
-    newState.runningProcess.remainingTime -= deltaTime
+    newState.runningProcess.remainingTime -= timeStep
 
     // Update the process in the processes array
     const processIndex = processes.findIndex((p) => p.id === newState.runningProcess!.id)
@@ -170,7 +175,7 @@ export function runSJF(state: SchedulerState, processes: Process[], preemptive: 
   newState.readyQueue.forEach((process) => {
     const processIndex = processes.findIndex((p) => p.id === process.id)
     if (processIndex !== -1) {
-      processes[processIndex].waitingTime += 0.1 // Small time step
+      processes[processIndex].waitingTime += timeStep // Small time step
     }
   })
 
@@ -178,8 +183,14 @@ export function runSJF(state: SchedulerState, processes: Process[], preemptive: 
 }
 
 // Priority Scheduling Algorithm
-export function runPriority(state: SchedulerState, processes: Process[], preemptive: boolean): SchedulerState {
+export function runPriority(
+  state: SchedulerState,
+  processes: Process[],
+  preemptive: boolean,
+  deltaTime: number,
+): SchedulerState {
   const newState = { ...state }
+  const timeStep = Math.max(deltaTime, 0)
 
   // Update ready queue with newly arrived processes
   const readyProcesses = processes.filter(
@@ -244,8 +255,7 @@ export function runPriority(state: SchedulerState, processes: Process[], preempt
 
   // If a process is running, update its remaining time
   if (newState.runningProcess) {
-    const deltaTime = 0.1 // Small time step for simulation
-    newState.runningProcess.remainingTime -= deltaTime
+    newState.runningProcess.remainingTime -= timeStep
 
     // Update the process in the processes array
     const processIndex = processes.findIndex((p) => p.id === newState.runningProcess!.id)
@@ -274,7 +284,7 @@ export function runPriority(state: SchedulerState, processes: Process[], preempt
   newState.readyQueue.forEach((process) => {
     const processIndex = processes.findIndex((p) => p.id === process.id)
     if (processIndex !== -1) {
-      processes[processIndex].waitingTime += 0.1 // Small time step
+      processes[processIndex].waitingTime += timeStep // Small time step
     }
   })
 
@@ -282,8 +292,14 @@ export function runPriority(state: SchedulerState, processes: Process[], preempt
 }
 
 // Round Robin Algorithm
-export function runRoundRobin(state: SchedulerState, processes: Process[], timeQuantum: number): SchedulerState {
+export function runRoundRobin(
+  state: SchedulerState,
+  processes: Process[],
+  timeQuantum: number,
+  deltaTime: number,
+): SchedulerState {
   const newState = { ...state }
+  const timeStep = Math.max(deltaTime, 0)
 
   // Update ready queue with newly arrived processes
   const readyProcesses = processes.filter(
@@ -315,9 +331,8 @@ export function runRoundRobin(state: SchedulerState, processes: Process[], timeQ
 
   // If a process is running, update its remaining time and time quantum
   if (newState.runningProcess) {
-    const deltaTime = 0.1 // Small time step for simulation
-    newState.runningProcess.remainingTime -= deltaTime
-    newState.timeQuantumRemaining -= deltaTime
+    newState.runningProcess.remainingTime -= timeStep
+    newState.timeQuantumRemaining -= timeStep
 
     // Update the process in the processes array
     const processIndex = processes.findIndex((p) => p.id === newState.runningProcess!.id)
@@ -360,7 +375,7 @@ export function runRoundRobin(state: SchedulerState, processes: Process[], timeQ
   newState.readyQueue.forEach((process) => {
     const processIndex = processes.findIndex((p) => p.id === process.id)
     if (processIndex !== -1) {
-      processes[processIndex].waitingTime += 0.1 // Small time step
+      processes[processIndex].waitingTime += timeStep // Small time step
     }
   })
 
@@ -368,13 +383,14 @@ export function runRoundRobin(state: SchedulerState, processes: Process[], timeQ
 }
 
 // Multilevel Feedback Queue (MLFQ) Algorithm
-export function runMLFQ(state: SchedulerState, processes: Process[]): SchedulerState {
+export function runMLFQ(state: SchedulerState, processes: Process[], deltaTime: number): SchedulerState {
   // For simplicity, we'll implement a 3-level MLFQ
   // Queue 1: RR with time quantum = 2
   // Queue 2: RR with time quantum = 4
   // Queue 3: FCFS
 
   const newState = { ...state }
+  const timeStep = Math.max(deltaTime, 0)
 
   // Update ready queue with newly arrived processes
   // New processes always go to the highest priority queue (Queue 1)
@@ -438,9 +454,8 @@ export function runMLFQ(state: SchedulerState, processes: Process[]): SchedulerS
 
   // If a process is running, update its remaining time and time quantum
   if (newState.runningProcess) {
-    const deltaTime = 0.1 // Small time step for simulation
-    newState.runningProcess.remainingTime -= deltaTime
-    newState.timeQuantumRemaining -= deltaTime
+    newState.runningProcess.remainingTime -= timeStep
+    newState.timeQuantumRemaining -= timeStep
 
     // Update the process in the processes array
     const processIndex = processes.findIndex((p) => p.id === newState.runningProcess!.id)
@@ -502,7 +517,7 @@ export function runMLFQ(state: SchedulerState, processes: Process[]): SchedulerS
   newState.readyQueue.forEach((process) => {
     const processIndex = processes.findIndex((p) => p.id === process.id)
     if (processIndex !== -1) {
-      processes[processIndex].waitingTime += 0.1 // Small time step
+      processes[processIndex].waitingTime += timeStep // Small time step
     }
   })
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useState } from "react"
 import type { Process } from "@/lib/types"
 
 interface GanttChartProps {
@@ -13,21 +13,47 @@ interface GanttChartProps {
 
 export function GanttChart({ data, processes, currentTime, width, height }: GanttChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [timeOffset, setTimeOffset] = useState(0)
 
   // Add this helper function at the top of the component
   const isValidNumber = (value: number): boolean => {
     return typeof value === "number" && isFinite(value) && !isNaN(value)
   }
 
-  // Calculate the maximum time to display with safety checks
-  let maxTime = 5 // Default minimum value
-  if (isValidNumber(currentTime)) {
-    maxTime = Math.max(maxTime, currentTime + 5) // Show at least 5 seconds ahead of current time
+  // Track when the first process segment begins so we can normalize the chart
+  useEffect(() => {
+    if (!data || data.length === 0) {
+      setTimeOffset(0)
+      return
+    }
+
+    const validStarts = data.map((item) => item.start).filter(isValidNumber)
+    if (validStarts.length === 0) {
+      setTimeOffset(0)
+      return
+    }
+
+    const earliestStart = Math.min(...validStarts)
+    setTimeOffset(earliestStart > 0 ? earliestStart : 0)
+  }, [data])
+
+  const normalizeTime = (value: number): number => {
+    if (!isValidNumber(value)) return 0
+    const normalized = value - timeOffset
+    return normalized < 0 ? 0 : normalized
   }
+
+  const displayCurrentTime = normalizeTime(currentTime)
+
+  // Calculate the maximum time to display with safety checks (normalized)
+  let maxTime = Math.max(5, displayCurrentTime + 5) // Default minimum value with buffer
 
   // Safely add process end times
   if (data && data.length > 0) {
-    const validEndTimes = data.map((item) => item.end).filter(isValidNumber)
+    const validEndTimes = data
+      .map((item) => item.end)
+      .filter(isValidNumber)
+      .map((value) => normalizeTime(value))
     if (validEndTimes.length > 0) {
       maxTime = Math.max(maxTime, ...validEndTimes)
     }
@@ -35,7 +61,10 @@ export function GanttChart({ data, processes, currentTime, width, height }: Gant
 
   // Safely add arrival times
   if (processes && processes.length > 0) {
-    const validArrivalTimes = processes.map((p) => p.arrivalTime).filter(isValidNumber)
+    const validArrivalTimes = processes
+      .map((p) => p.arrivalTime)
+      .filter(isValidNumber)
+      .map((value) => normalizeTime(value))
     if (validArrivalTimes.length > 0) {
       maxTime = Math.max(maxTime, ...validArrivalTimes)
     }
@@ -110,7 +139,7 @@ export function GanttChart({ data, processes, currentTime, width, height }: Gant
     }
 
     // Draw current time indicator with animation effect
-    const currentX = 100 + currentTime * timeScale
+    const currentX = 100 + displayCurrentTime * timeScale
     ctx.strokeStyle = "#ef4444" // red-500
     ctx.lineWidth = 2
 
@@ -144,7 +173,7 @@ export function GanttChart({ data, processes, currentTime, width, height }: Gant
       const y = chartTop + index * (processHeight + processGap)
 
       // Draw arrival marker with better styling
-      const arrivalX = 100 + process.arrivalTime * timeScale
+      const arrivalX = 100 + normalizeTime(process.arrivalTime) * timeScale
 
       // Triangle marker with gradient
       if (isValidNumber(arrivalX) && isValidNumber(y)) {
@@ -183,8 +212,8 @@ export function GanttChart({ data, processes, currentTime, width, height }: Gant
       const index = processes.findIndex((p) => p.id === item.id)
       const y = chartTop + index * (processHeight + processGap)
 
-      const startX = 100 + item.start * timeScale
-      const endX = 100 + item.end * timeScale
+      const startX = 100 + normalizeTime(item.start) * timeScale
+      const endX = 100 + normalizeTime(item.end) * timeScale
       const width = endX - startX
 
       // Draw process execution bar with rounded corners and gradient
@@ -226,7 +255,7 @@ export function GanttChart({ data, processes, currentTime, width, height }: Gant
         ctx.shadowColor = "transparent"
       }
     })
-  }, [data, processes, currentTime, maxTime, width, height])
+  }, [data, processes, currentTime, maxTime, width, height, timeOffset])
 
   // Helper function to adjust color brightness
   const adjustColor = (color: string, amount: number): string => {
